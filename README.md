@@ -23,7 +23,7 @@ It is not a language model. It reads sentences with deterministic rules, and thr
 | The arena run: reads `/universe/`, writes `/output/output.csv` | `docker build --platform linux/amd64 -t kolmogorov56 .` then `scripts/check.sh kolmogorov56` |
 | The frontend: upload a CSV, watch each step, download the tables | `python -m hype.server`, then open http://localhost:8000 |
 | The arena run on this machine, without Docker | `python -m hype.run --contract universe.csv --out output.csv` |
-| Label a table and get it back in the practice shape: `id, text, date, label, form, residue` | `python -m hype.run my_rows.csv --out results.csv` |
+| Label a table and get it back in the practice shape: `id, text, date, label, confidence, form, residue` | `python -m hype.run my_rows.csv --out results.csv` |
 | Write sentences one by one; each is labelled and added to the table | `python -m hype.run --write` |
 | Label given sentences and add them to the table | `python -m hype.run --add "2026-04-01 \| Hooly AI Pro costs €59 per month."` |
 | Explain the label of a sentence in full | `python -m hype.pipeline "2026-04-01 \| Hooly AI Pro costs €59 per month."` |
@@ -288,13 +288,15 @@ Functions whose name starts with `_` are internal helpers of their module.
 
 | Function | What it does |
 | --- | --- |
-| `run_arena(input, lexicon, output)` | The contract's run: a label for every unlabelled row and the 1,000 claims, in `/output/output.csv`. The table is written whole three times: every row `unsure` at once, then with the claims, then with the labels. A run stopped at the deadline still hands in a valid table. Its inner `label_rows()` writes the label rows of the contract. |
+| `run_arena(input, lexicon, output)` | The contract's run, in `/output/output.csv`: first a label row for every unlabelled input row, in the input's order (`confidence` 0.5 to 1 for `true` and `false`, empty for `unsure`, as the contract asks), then the 1,000 claims, each with its confidence. The table is written whole three times: every row `unsure` at once, then with the claims, then with the labels. A run stopped at the deadline still hands in a valid table. Its inner `label_rows()` writes the label rows of the contract. |
 | `run_table(args)` | Labels a table and writes it back in the practice shape. When every row already has a label, it labels them all and compares. |
 | `add_sentences(sentences, table)` | Labels each (date, sentence) and adds it to the end of a table, creating the table if needed. Usable from Python. |
 | `run_add(args)`, `run_write(args)` | `--add` sentences on the command line; `--write` reads them from the keyboard, with `why` to explain the last one. |
 | `practice_rows(rows, verdicts, readings)` | Rows in the practice shape: the system's label where there was none, and the form and residue everywhere. |
 | `label_table(pipeline, rows, relabel)` | Runs the pipeline on a table, optionally ignoring the labels it has. |
 | `read_table(path)`, `write_table(path, columns, rows)` | Read a CSV with `,` or `;`. Write one under another name and rename it when complete, so it is never half written. |
+| `normalize_date(text)`, `readable(rows)` | Bring a date to `YYYY-MM-DD` from the ways tables write one (`2026/10/29`, and day first as Excel writes it in Romania: `29.10.2026`, `29/10/2026`); the rows with a text and a real date. A row whose date is no date is labelled `unsure`. |
+| `label_safely(pipeline, rows)` | Labels the whole table; if that fails, page by page, so one page that breaks the system leaves only its own rows `unsure`. |
 | `print_verdict`, `parse_sentence`, `table_columns`, `as_json`, `utf8_streams`, `main` | Print a verdict; parse `DATE \| sentence`; a table's columns; compact JSON; UTF-8 in and out whatever the console; the command line. |
 
 ### `hype/server.py` and `hype/web/index.html`: the frontend

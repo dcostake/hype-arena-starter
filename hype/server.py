@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .characterize import DEFAULT_LEXICON, ROOT
 from .claims import CLAIM_TYPES, claim_rows, generate_claims
 from .pipeline import HypePipeline
-from .run import CONTRACT_COLUMNS, DETAIL_COLUMNS, PRACTICE_COLUMNS, practice_rows
+from .run import CONTRACT_COLUMNS, DETAIL_COLUMNS, PRACTICE_COLUMNS, normalize_date, practice_rows
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 SAMPLE = os.path.join(ROOT, "sample", "sample.csv")
@@ -52,9 +52,11 @@ def parse_csv(text: str) -> list[dict]:
     if not rows:
         raise ValueError("the table has no rows")
     for r in rows:
-        d = r.get("date", "")
-        if len(d) != 10 or d[4] != "-" or d[7] != "-":
-            raise ValueError(f"row {r['id']}: the date {d!r} is not YYYY-MM-DD")
+        r["label"] = (r.get("label") or "").strip().lower()
+        iso = normalize_date(r.get("date", ""))
+        if not iso:
+            raise ValueError(f"row {r['id']}: the date {r.get('date')!r} is not a date; write it as YYYY-MM-DD")
+        r["date"] = iso
     return rows
 
 
@@ -142,10 +144,16 @@ class Handler(BaseHTTPRequestHandler):
                 step("claims", {"claims": len(claims_out),
                                 "by_type": {t: sum(1 for c in claims_out if c["type"] == t) for t in CLAIM_TYPES}})
             table = practice_rows(rows, by_id, readings)
-            contract = [{"id": r["id"], "type": "", "text": "", "form": "",
-                         "label": by_id[r["id"]].label,
-                         "confidence": "" if by_id[r["id"]].confidence is None else f"{by_id[r['id']].confidence:.4f}"}
-                        for r in rows if r["id"] in by_id] + claims_out
+            # as the contract asks: a label for every unlabelled row, in the input's order, then the claims
+            contract = []
+            for r in rows:
+                if r["label"]:
+                    continue
+                v = by_id.get(r["id"])
+                label = v.label if v else "unsure"
+                conf = "" if label == "unsure" or v is None or v.confidence is None else f"{v.confidence:.4f}"
+                contract.append({"id": r["id"], "type": "", "text": "", "form": "", "label": label, "confidence": conf})
+            contract += claims_out
             step("written", {"rows": len(table), "contract_rows": len(contract)})
             preview = []
             for r in table:

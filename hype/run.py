@@ -22,14 +22,16 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 import time
+from datetime import date as Date
 
 from .characterize import DEFAULT_LEXICON
 from .pipeline import HypePipeline, Reading, Verdict
 
-PRACTICE_COLUMNS = ["id", "text", "date", "label", "form", "residue"]
-DETAIL_COLUMNS = ["confidence", "decided_by", "reasons"]
+PRACTICE_COLUMNS = ["id", "text", "date", "label", "confidence", "form", "residue"]
+DETAIL_COLUMNS = ["decided_by", "reasons"]
 CONTRACT_COLUMNS = ["id", "type", "text", "form", "label", "confidence"]
 ARENA_INPUT = "/universe/universe.csv"
 ARENA_LEXICON = "/universe/lexicon.json"
@@ -38,8 +40,27 @@ ARENA_OUTPUT = "/output/output.csv"
 
 # --- tables ------------------------------------------------------------------------------
 
+def normalize_date(text: str) -> str | None:
+    """A date as YYYY-MM-DD, from the ways a table writes one: 2026-10-29, 2026/10/29, 2026-10-29T08:00,
+    and, as Excel writes it in Romania, 29.10.2026 or 29/10/2026 (day first). None if it is no date."""
+    text = (text or "").strip()
+    m = re.match(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T ].*)?$", text)
+    if m:
+        y, mo, d = m.groups()
+    else:
+        m = re.match(r"^(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?:[T ].*)?$", text)
+        if not m:
+            return None
+        d, mo, y = m.groups()
+    try:
+        return Date(int(y), int(mo), int(d)).isoformat()
+    except ValueError:
+        return None
+
+
 def read_table(path: str) -> list[dict]:
-    """The rows of a CSV with `id`, `text` and `date`; a semicolon CSV, as Excel writes it in Romanian, reads too."""
+    """The rows of a CSV with `id`, `text` and `date`; a semicolon CSV, as Excel writes it in Romanian, reads too.
+    Dates are brought to YYYY-MM-DD; a row whose date is no date keeps it, and `bad_date` marks it."""
     with open(path, encoding="utf-8-sig", newline="") as f:
         data = f.read()
     first = data.split("\n", 1)[0]
@@ -49,7 +70,24 @@ def read_table(path: str) -> list[dict]:
     missing = {"id", "text", "date"} - {(c or "").strip().lower() for c in reader.fieldnames or []}
     if missing:
         raise SystemExit(f"{path}: the table has no column {', '.join(sorted(missing))}")
+    rows = [r for r in rows if r.get("id")]
+    for r in rows:
+        r["label"] = (r.get("label") or "").strip().lower()
+        iso = normalize_date(r["date"])
+        if iso:
+            r["date"] = iso
+        else:
+            r["bad_date"] = True
+    bad = [r["id"] for r in rows if r.get("bad_date")]
+    if bad:
+        print(f"{len(bad)} rows have a date that is not a date and are labelled unsure: {', '.join(bad[:5])}"
+              + (" ..." if len(bad) > 5 else ""), file=sys.stderr)
     return rows
+
+
+def readable(rows: list[dict]) -> list[dict]:
+    """The rows the system can read: a text and a real date."""
+    return [r for r in rows if not r.get("bad_date") and r.get("text")]
 
 
 def write_table(path: str, columns: list[str], rows: list[dict], excel: bool = True) -> None:
@@ -84,7 +122,12 @@ def practice_rows(rows: list[dict], verdicts: dict[str, Verdict], readings: dict
             row["confidence"] = "" if v.confidence is None else f"{v.confidence:.4f}"
             row["decided_by"] = v.decided_by
             row["reasons"] = " | ".join(f"{f.name}: {f.readings[0] if f.readings else 'no reading'}" for f in v.facts) or "no fact read"
+        elif not r.get("label"):
+            # a row the system could not read: unsure, which takes no confidence
+            row["label"], row["confidence"] = "unsure", ""
+            row["decided_by"] = "unreadable date" if r.get("bad_date") else "not labelled"
         else:
+            row["confidence"] = ""  # the input's own label: the system has no confidence in it to give
             row["decided_by"] = "input"
         out.append(row)
     return out
@@ -93,7 +136,7 @@ def practice_rows(rows: list[dict], verdicts: dict[str, Verdict], readings: dict
 def label_table(pipeline: HypePipeline, rows: list[dict], relabel: bool = False, same_page: bool = True):
     if relabel:
         rows = [{**r, "label": ""} for r in rows]
-    verdicts, readings = pipeline.analyse(rows, same_page=same_page)
+    verdicts, readings = pipeline.analyse(readable(rows), same_page=same_page)
     return rows, {v.id: v for v in verdicts}, readings
 
 
@@ -257,16 +300,47 @@ def run_arena(input_path: str = ARENA_INPUT, lexicon_path: str | None = None, ou
             out.append({"id": r["id"], "type": "", "text": "", "form": "", "label": label, "confidence": conf})
         return out
 
+    # first the labels of the input's unlabelled rows, in the input's order, then the 1,000 claims
     write_table(output_path, CONTRACT_COLUMNS, label_rows({}), excel=False)
-    claims, _ = generate_claims(lexicon, rows)
-    taken = {r["id"] for r in rows}
-    claims_out = [c for c in claim_rows(claims) if c["id"] not in taken]
-    write_table(output_path, CONTRACT_COLUMNS, label_rows({}) + claims_out, excel=False)
-    print(f"{len(claims_out)} claims in {time.time() - started:.0f} s", flush=True)
-    verdicts = {v.id: v for v in HypePipeline.load(lexicon).label(rows)}
+    claims_out: list[dict] = []
+    try:
+        claims, _ = generate_claims(lexicon, readable(rows))
+        taken = {r["id"] for r in rows}
+        claims_out = [c for c in claim_rows(claims) if c["id"] not in taken]
+        write_table(output_path, CONTRACT_COLUMNS, label_rows({}) + claims_out, excel=False)
+        print(f"{len(claims_out)} claims in {time.time() - started:.0f} s", flush=True)
+    except Exception as e:  # the labels are still worth handing in
+        print(f"the claims failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+    verdicts = label_safely(HypePipeline.load(lexicon), readable(rows))
     write_table(output_path, CONTRACT_COLUMNS, label_rows(verdicts) + claims_out, excel=False)
-    print(f"labelled {len(unlabelled)} rows into {output_path} in {time.time() - started:.0f} s")
+    labelled = sum(1 for r in unlabelled if r["id"] in verdicts)
+    print(f"labelled {labelled} of {len(unlabelled)} rows, then {len(claims_out)} claims, into {output_path} "
+          f"in {time.time() - started:.0f} s")
     return 0
+
+
+def label_safely(pipeline: HypePipeline, rows: list[dict]) -> dict[str, Verdict]:
+    """The verdicts of the whole table; if that fails, page by page, so one page that breaks the
+    system leaves only its own rows unsure."""
+    try:
+        return {v.id: v for v in pipeline.label(rows)}
+    except Exception as e:
+        print(f"labelling the whole table failed ({type(e).__name__}: {e}); labelling page by page",
+              file=sys.stderr, flush=True)
+    from .resolve import segment_pages
+    labelled_rows = [r for r in rows if r.get("label")]
+    verdicts: dict[str, Verdict] = {}
+    for page in segment_pages(rows):
+        if all(r.get("label") for r in page):
+            continue
+        ids = {r["id"] for r in page}
+        try:
+            for v in pipeline.label([r for r in labelled_rows if r["id"] not in ids] + page):
+                verdicts[v.id] = v
+        except Exception as e:
+            print(f"  page of {page[0]['date']} ({len(page)} rows) stays unsure: {type(e).__name__}: {e}",
+                  file=sys.stderr, flush=True)
+    return verdicts
 
 
 def utf8_streams() -> None:
