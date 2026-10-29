@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hype Arena · Hooly checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+/* The palette and type of hype-arena.vercel.app: paper, onyx, sapphire, a lime highlight, Figtree. */
+:root {
+  --paper: #FCFCFC; --onyx: #0A0A0A; --sapphire: #2859B5; --sky: #1D6DD7; --lime: #D7F13B; --gray: #CED3DC;
+  --soft: #3d4350; --muted: #6b7280; --rule: rgb(10 10 10 / .13); --wash: #F2F4F7;
+  --true: #1f7a4d; --true-bg: #E3F3EA; --false: #B3362F; --false-bg: #F9E3E1; --unsure: #8A6400; --unsure-bg: #FBF0D2;
+  --f-head: "Figtree", system-ui, sans-serif; --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --ease: cubic-bezier(.23, 1, .32, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--onyx); font: 400 16px/1.55 var(--f-body); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 max(20px, env(safe-area-inset-left)) 80px; }
+header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: 10px; font: 800 18px var(--f-head); letter-spacing: -.02em; }
+.brand .dot { width: 14px; height: 14px; border-radius: 4px; background: var(--sapphire); box-shadow: 4px 4px 0 var(--lime); }
+.status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.status i { width: 8px; height: 8px; border-radius: 99px; background: var(--gray); display: inline-block; }
+.status.ok i { background: var(--true); }
+h1, h2, h3 { font-family: var(--f-head); margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(40px, 6vw, 68px); font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+h1 mark { background: var(--lime); color: var(--onyx); padding: 0 .12em; border-radius: 6px; }
+h2 { font-size: clamp(26px, 3vw, 34px); font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+h3 { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+.hero { padding: 56px 0 36px; display: grid; gap: 16px; }
+.lede { font-size: 19px; color: var(--soft); max-width: 60ch; margin: 0; }
+section { margin-top: 44px; display: grid; gap: 18px; }
+.eyebrow { font: 600 12px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--sapphire); }
+.card { background: #fff; border: 1px solid var(--rule); border-radius: 20px; padding: 24px; }
+
+/* upload */
+.drop { border: 2px dashed var(--gray); border-radius: 20px; padding: 36px 24px; display: grid; gap: 14px; justify-items: center;
+  text-align: center; background: #fff; transition: border-color .2s var(--ease), background .2s var(--ease); }
+.drop.over { border-color: var(--sapphire); background: #F3F7FE; }
+.drop p { margin: 0; color: var(--muted); }
+.drop .file { font: 600 15px var(--f-head); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
+button, .btn { font: 600 15px var(--f-head); border-radius: 999px; padding: 11px 20px; border: 1px solid var(--onyx);
+  background: var(--paper); color: var(--onyx); cursor: pointer; transition: transform .15s var(--ease), background .15s; }
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button.primary { background: var(--sapphire); border-color: var(--sapphire); color: #fff; }
+button.go { background: var(--onyx); color: var(--paper); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button:focus-visible, .tab:focus-visible { outline: 3px solid var(--lime); outline-offset: 2px; }
+label.check { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; color: var(--soft); }
+
+/* the steps: the system's architecture, lit as it runs */
+.steps { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 20px; overflow: hidden; background: #fff; }
+.step { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 16px; align-items: start; padding: 18px 22px;
+  border-top: 1px solid var(--rule); transition: background .3s var(--ease); }
+.step:first-child { border-top: 0; }
+.step .n { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font: 800 15px var(--f-head);
+  background: var(--wash); color: var(--muted); }
+.step .what { color: var(--muted); font-size: 14px; margin: 2px 0 0; }
+.step .file { font: 12px var(--f-mono); color: var(--muted); }
+.step .out { font-size: 14px; margin-top: 6px; color: var(--onyx); font-weight: 500; }
+.step .chip { font: 600 12px var(--f-head); padding: 4px 10px; border-radius: 999px; background: var(--wash); color: var(--muted); white-space: nowrap; }
+.step.running { background: #FBFDE9; }
+.step.running .n { background: var(--lime); color: var(--onyx); }
+.step.running .chip { background: var(--lime); color: var(--onyx); }
+.step.done .n { background: var(--sapphire); color: #fff; }
+.step.done .chip { background: #E8EEF9; color: var(--sapphire); }
+.step.skipped { opacity: .5; }
+.bar { height: 4px; background: var(--wash); border-radius: 4px; overflow: hidden; margin-top: 8px; display: none; }
+.bar span { display: block; height: 100%; width: 0; background: var(--sapphire); transition: width .3s var(--ease); }
+.step.running .bar { display: block; }
+
+/* the result */
+.totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.total { border-radius: 16px; padding: 16px 18px; background: var(--wash); }
+.total b { display: block; font: 800 34px var(--f-head); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.total span { font-size: 14px; color: var(--soft); }
+.total.t { background: var(--true-bg); } .total.t b { color: var(--true); }
+.total.f { background: var(--false-bg); } .total.f b { color: var(--false); }
+.total.u { background: var(--unsure-bg); } .total.u b { color: var(--unsure); }
+@media (max-width: 720px) { .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.downloads { display: flex; gap: 10px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab { font: 600 13px var(--f-head); padding: 7px 14px; border-radius: 999px; border: 1px solid var(--rule); background: #fff; cursor: pointer; }
+.tab[aria-pressed="true"] { background: var(--onyx); color: var(--paper); border-color: var(--onyx); }
+.tablewrap { border: 1px solid var(--rule); border-radius: 20px; overflow: auto; background: #fff; max-height: 640px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 720px; }
+th { position: sticky; top: 0; background: #fff; text-align: left; font: 600 12px var(--f-head); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); padding: 12px 14px; border-bottom: 1px solid var(--rule); z-index: 1; }
+td { padding: 11px 14px; border-top: 1px solid var(--rule); vertical-align: top; }
+tr.item { cursor: pointer; }
+tr.item:hover td { background: #F7F9FC; }
+td.mono, .mono { font-family: var(--f-mono); font-size: 12.5px; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lab { font: 700 12px var(--f-head); letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.lab.true { background: var(--true-bg); color: var(--true); }
+.lab.false { background: var(--false-bg); color: var(--false); }
+.lab.unsure { background: var(--unsure-bg); color: var(--unsure); }
+.given { font-size: 12px; color: var(--muted); margin-left: 6px; }
+tr.detail td { background: #FAFBFD; }
+.why { display: grid; gap: 10px; padding: 4px 0; }
+.fact { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 12px; border-radius: 12px; background: #fff; border: 1px solid var(--rule); }
+.fact .name { font: 12.5px var(--f-mono); overflow-wrap: anywhere; }
+.fact .holds { font: 700 13px var(--f-head); font-variant-numeric: tabular-nums; }
+.fact .reason { grid-column: 1 / -1; color: var(--soft); font-size: 13px; }
+.fact .near { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.residue { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); }
+.residue span.r { background: var(--wash); color: var(--soft); border-radius: 8px; padding: 2px 8px; font-size: 12.5px; }
+.claims { display: grid; gap: 8px; }
+.claim { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 12px 16px; border-radius: 14px; background: #fff; border: 1px solid var(--rule); }
+.claim .type { font: 700 12px var(--f-head); text-transform: uppercase; letter-spacing: .05em; color: var(--sapphire); }
+@media (max-width: 640px) { .claim { grid-template-columns: 1fr; } .step { grid-template-columns: 40px minmax(0,1fr); } .step .chip { grid-column: 2; justify-self: start; } }
+.error { border-radius: 16px; background: var(--false-bg); color: var(--false); padding: 14px 18px; font-weight: 500; }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span class="dot" aria-hidden="true"></span>Hype Arena</div>
+    <div class="status" id="status"><i></i><span>connecting</span></div>
+  </header>
+
+  <div class="hero">
+    <span class="eyebrow">Hooly fact checker</span>
+    <h1>Check the <mark>universe</mark>.</h1>
+    <p class="lede">Upload rows about Hooly. Watch each one go through the system. Take back every row labelled true, false or unsure, with the facts it read and the 1,000 new claims.</p>
+  </div>
+
+  <section aria-labelledby="up-h">
+    <h2 id="up-h">Upload the rows.</h2>
+    <div class="drop" id="drop">
+      <p class="file" id="fileName">Drop a CSV here</p>
+      <p id="fileInfo">Columns <span class="mono">id, text, date</span>, and <span class="mono">label</span> where it is known. Rows with an empty label get one.</p>
+      <div class="row">
+        <button type="button" class="primary" id="choose">Choose a CSV</button>
+        <button type="button" id="sample" disabled>Use the sample</button>
+        <input type="file" id="file" accept=".csv,text/csv" hidden>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="withClaims" checked> Write the 1,000 new claims too</label>
+        <button type="button" class="go" id="run" disabled>Run the system</button>
+      </div>
+    </div>
+    <div class="error" id="error" hidden></div>
+  </section>
+
+  <section aria-labelledby="steps-h">
+    <h2 id="steps-h">The steps.</h2>
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section aria-labelledby="res-h" id="results" hidden>
+    <h2 id="res-h">The result.</h2>
+    <div class="totals" id="totals"></div>
+    <div class="downloads" id="downloads"></div>
+    <div class="tabs" role="group" aria-label="Show rows" id="tabs"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>id</th><th>date</th><th>text</th><th>label</th><th>confidence</th><th>decided by</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="status" style="margin:0">Click a row to see the facts it read, why it got its label, and its residue.</p>
+    <div id="claimsBlock" hidden>
+      <h3 style="margin-bottom:10px">A few of the new claims</h3>
+      <div class="claims" id="claims"></div>
+    </div>
+  </section>
+
+  <footer>No language model decides anything here: the system reads each sentence with deterministic rules, and small log-linear models learned from the practice data resolve its facts and weigh the evidence. Hooly is a fictional company.</footer>
+</div>
+
+<script>
+const STEPS = [
+  { key: "pages", title: "Group the rows into pages", what: "Consecutive rows of one date are one page: the context a sentence leans on.", file: "resolve.py · segment_pages",
+    out: d => `${d.rows} rows · ${d.pages} pages · ${d.unlabelled} to label` },
+  { key: "read", title: "Read each sentence", what: "Subjects from the lexicon, values as the referee reads them, names, and references like “He” or “its”.", file: "characterize.py · values.py",
+    out: d => `${d.values} values · ${d.subjects} subjects named · ${d.references} references` },
+  { key: "facts", title: "Find the facts it states", what: "Each value tied to a subject and attribute, the subject found in the page when the sentence leaves it out. What is left over is the residue.", file: "resolve.py",
+    out: d => `${d.facts} facts · ${d.from_context} with the subject from context · ${d.with_residue} rows with a residue` },
+  { key: "knowledge", title: "Check what was known", what: "Every labelled row is an observation of its facts on its date: a timeline for each fact.", file: "knowledge.py",
+    out: d => `${d.observations.toLocaleString()} observations of ${d.facts_tracked} facts` },
+  { key: "labelled", title: "Decide each label", what: "How likely each fact held on the row's date, then true, false or unsure for the row, with two rules found in the data.", file: "label.py",
+    out: d => `${d.true} true · ${d.false} false · ${d.unsure} unsure · ${d.by_rule} decided by a rule` },
+  { key: "claims", title: "Write 1,000 new claims", what: "From the surest labelled evidence only, each text read back as the referee reads it.", file: "claims.py",
+    out: d => `${d.claims} claims · ` + Object.entries(d.by_type).map(([k, v]) => `${v} ${k.replace("_", " ")}`).join(" · ") },
+  { key: "written", title: "Hand in the tables", what: "The table in the practice shape, the contract's output.csv, and the claims.", file: "run.py",
+    out: d => `${d.rows} rows · output.csv with ${d.contract_rows} lines` },
+];
+const $ = id => document.getElementById(id);
+let csvText = null, result = null, filter = "system";
+
+function renderSteps() {
+  $("steps").innerHTML = STEPS.map((s, i) => `
+    <div class="step" id="step-${s.key}">
+      <div class="n">${i + 1}</div>
+      <div><h3>${s.title}</h3><p class="what">${s.what}</p><div class="file">${s.file}</div>
+        <div class="out" id="out-${s.key}"></div><div class="bar"><span id="bar-${s.key}"></span></div></div>
+      <span class="chip" id="chip-${s.key}">waiting</span>
+    </div>`).join("");
+}
+function setStep(key, state, text, secs) {
+  const el = $(`step-${key}`);
+  el.classList.remove("running", "done", "skipped");
+  if (state) el.classList.add(state);
+  $(`chip-${key}`).textContent = state === "done" ? (secs != null ? `${secs < 0.1 ? "<0.1" : secs.toFixed(1)} s` : "done")
+    : state === "running" ? "running" : state === "skipped" ? "skipped" : "waiting";
+  if (text != null) $(`out-${key}`).textContent = text;
+}
+const next = key => STEPS[STEPS.findIndex(s => s.key === key) + 1]?.key;
+
+function loadText(text, name) {
+  csvText = text;
+  const lines = text.trim().split(/\r?\n/).length - 1;
+  $("fileName").textContent = name;
+  $("fileInfo").textContent = `${lines.toLocaleString()} rows ready`;
+  $("run").disabled = false;
+  $("error").hidden = true;
+}
+$("choose").onclick = () => $("file").click();
+$("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => loadText(t, f.name)); };
+const drop = $("drop");
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) f.text().then(t => loadText(t, f.name)); });
+$("sample").onclick = async () => {
+  const r = await fetch("/api/sample");
+  if (r.ok) loadText(await r.text(), "sample/sample.csv"); else showError((await r.json()).error);
+};
+function showError(msg) { $("error").textContent = msg; $("error").hidden = false; }
+
+$("run").onclick = async () => {
+  if (!csvText) return;
+  $("run").disabled = true; $("error").hidden = true; $("results").hidden = true;
+  renderSteps();
+  setStep("pages", "running", "");
+  const withClaims = $("withClaims").checked;
+  let resp;
+  try {
+    resp = await fetch("/api/run", { method: "POST", body: csvText, headers: { "Content-Type": "text/csv", "X-Options": withClaims ? "claims=1" : "claims=0" } });
+  } catch (e) { showError("The system is not answering: is `py -m hype.server` running?"); $("run").disabled = false; return; }
+  if (!resp.ok) { showError((await resp.json()).error); $("run").disabled = false; return; }
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) { handle(JSON.parse(buf.slice(0, i)), withClaims); buf = buf.slice(i + 1); }
+  }
+  $("run").disabled = false;
+};
+
+function handle(ev, withClaims) {
+  if (ev.error) { showError(ev.error); return; }
+  if (ev.result) { result = ev.result; showResult(); return; }
+  const d = ev.details;
+  const step = STEPS.find(s => s.key === ev.stage);
+  if (ev.stage === "reading") {
+    setStep("read", "running"); $("out-read").textContent = `page ${d.pages_done} of ${d.pages}`;
+    $("bar-read").style.width = `${100 * d.pages_done / d.pages}%`; return;
+  }
+  if (ev.stage === "read") {
+    setStep("read", "done", STEPS[1].out(d), ev.seconds); setStep("facts", "done", STEPS[2].out(d), 0);
+    setStep("knowledge", "running"); return;
+  }
+  setStep(ev.stage, "done", step.out(d), ev.seconds);
+  let n = next(ev.stage);
+  if (ev.stage === "pages") n = "read";
+  if (n === "claims" && !withClaims) { setStep("claims", "skipped", "not asked for"); n = "written"; }
+  if (n) setStep(n, "running");
+}
+
+function showResult() {
+  $("results").hidden = false;
+  const sys = result.preview.filter(r => !r.given);
+  const count = l => sys.filter(r => r.label === l).length;
+  $("totals").innerHTML = `
+    <div class="total"><b>${sys.length.toLocaleString()}</b><span>rows labelled in ${result.seconds} s</span></div>
+    <div class="total t"><b>${count("true")}</b><span>true</span></div>
+    <div class="total f"><b>${count("false")}</b><span>false</span></div>
+    <div class="total u"><b>${count("unsure")}</b><span>unsure</span></div>`;
+  const files = Object.entries(result.files).filter(([, t]) => t);
+  const what = { "labelled.csv": "Labelled table (practice shape)", "output.csv": "output.csv (contract)", "claims.csv": "The claims" };
+  $("downloads").innerHTML = files.map(([name], i) => `<button type="button" class="${i === 0 ? "primary" : ""}" data-file="${name}">Download ${what[name]}</button>`).join("");
+  $("downloads").querySelectorAll("button").forEach(b => b.onclick = () => download(b.dataset.file));
+  const tabs = [["system", `Labelled by the system (${sys.length})`], ["true", "True"], ["false", "False"], ["unsure", "Unsure"], ["all", `All rows (${result.preview.length})`]];
+  $("tabs").innerHTML = tabs.map(([k, t]) => `<button type="button" class="tab" data-k="${k}" aria-pressed="${k === filter}">${t}</button>`).join("");
+  $("tabs").querySelectorAll(".tab").forEach(b => b.onclick = () => { filter = b.dataset.k; showResult(); });
+  renderRows();
+  const cl = result.claims_preview || [];
+  $("claimsBlock").hidden = !cl.length;
+  $("claims").innerHTML = cl.slice(0, 12).map(c => `<div class="claim"><span class="type">${c.type.replace("_", " ")}</span><span>${esc(c.text)}</span><span class="mono">${(+c.confidence).toFixed(2)}</span></div>`).join("");
+}
+
+function renderRows() {
+  let rows = result.preview;
+  if (filter === "system") rows = rows.filter(r => !r.given);
+  else if (filter !== "all") rows = rows.filter(r => !r.given && r.label === filter);
+  const shown = rows.slice(0, 600);
+  $("rows").innerHTML = shown.map((r, i) => `
+    <tr class="item" data-i="${i}">
+      <td class="mono">${esc(r.id)}</td><td class="num">${r.date}</td><td>${esc(r.text)}</td>
+      <td><span class="lab ${r.label}">${r.label}</span>${r.given ? '<span class="given">given</span>' : ""}</td>
+      <td class="num">${r.confidence == null ? "" : r.confidence.toFixed(2)}</td><td>${esc(r.decided_by)}</td>
+    </tr>`).join("") + (rows.length > shown.length ? `<tr><td colspan="6" class="status">and ${rows.length - shown.length} more rows in the download</td></tr>` : "");
+  $("rows").querySelectorAll("tr.item").forEach(tr => tr.onclick = () => toggle(tr, shown[+tr.dataset.i]));
+}
+
+function toggle(tr, r) {
+  if (tr.nextElementSibling?.classList.contains("detail")) { tr.nextElementSibling.remove(); return; }
+  const facts = r.facts.length ? r.facts.map(f => `
+      <div class="fact"><span class="name">${esc(f.fact)}</span><span class="holds">${Math.round(f.holds * 100)}% holds</span>
+        <span class="reason">${esc(f.reason || "no telling reading")}</span>
+        <span class="near">${[f.before && "before: " + f.before, f.after && "after: " + f.after].filter(Boolean).map(esc).join(" · ")}</span></div>`).join("")
+    : r.given ? `<div class="residue">This row came with its label; the system reads it as knowledge.</div>`
+    : `<div class="residue">No fact read: the label rests on the row's voice and the model's prior.</div>`;
+  const res = Object.entries(r.residue || {});
+  const residue = res.length ? `<div class="residue"><b>Residue</b>${res.map(([k, v]) => v.map(x => `<span class="r">${k}: ${esc(x)}</span>`).join("")).join("")}</div>` : "";
+  const form = r.form.length ? `<div class="residue"><b>Form</b><span class="mono">${esc(JSON.stringify(r.form))}</span></div>` : "";
+  const d = document.createElement("tr");
+  d.className = "detail";
+  d.innerHTML = `<td colspan="6"><div class="why">${facts}${form}${residue}</div></td>`;
+  tr.after(d);
+}
+
+function download(name) {
+  const blob = new Blob(["﻿" + result.files[name]], { type: "text/csv;charset=utf-8" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+renderSteps();
+fetch("/api/health").then(r => r.json()).then(h => {
+  $("status").classList.add("ok"); $("status").querySelector("span").textContent = "system ready";
+  $("sample").disabled = !h.sample; if (!h.sample) $("sample").title = "sample/sample.csv is not in the repository yet";
+}).catch(() => $("status").querySelector("span").textContent = "not connected");
+</script>
+</body>
+</html>

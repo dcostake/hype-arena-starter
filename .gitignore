@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.part
+
+# tables the system writes when run here
+results*.csv
+results*.xlsx
+report*.xlsx
+claims.csv
+output.csv
+labelled.csv

@@ -176,7 +176,7 @@ class HypePipeline:
         """Verdicts for the rows whose `label` is empty; see `analyse`."""
         return self.analyse(rows, same_page)[0]
 
-    def analyse(self, rows: list[dict], same_page: bool = True) -> tuple[list[Verdict], dict[str, "Reading"]]:
+    def analyse(self, rows: list[dict], same_page: bool = True, progress=None) -> tuple[list[Verdict], dict[str, "Reading"]]:
         """Verdicts for the rows whose `label` is empty, among rows of `id`, `date`, `text` and `label`,
         and what the system reads from every row, by id: its form and its residue.
 
@@ -184,14 +184,28 @@ class HypePipeline:
         (with their gold forms), the others with the facts the resolver reads from them.
         With `same_page`, consecutive rows of one date are read as one page, as in the
         input; without it, each row stands alone.
+
+        `progress(stage, details)`, when given, hears each stage as it ends: "pages",
+        "reading" (while the pages are read), "read", "knowledge" and "labelled".
         """
+        report = progress or (lambda stage, details: None)
         pages = segment_pages(rows) if same_page else [[r] for r in rows]
+        report("pages", {"rows": len(rows), "pages": len(pages),
+                         "labelled": sum(1 for r in rows if (r.get("label") or "").strip()),
+                         "unlabelled": sum(1 for r in rows if not (r.get("label") or "").strip())})
         new: list[RowFacts] = []
         labelled: list[RowFacts] = []
         readings: dict[str, Reading] = {}
+        read_stats = {"values": 0, "subjects": 0, "references": 0, "facts": 0, "from_context": 0, "with_residue": 0}
         for n, page in enumerate(pages):
             for row, (profile, facts) in zip(page, self.resolver.resolve_page(page)):
                 readings[row["id"]] = Reading([f.as_form() for f in facts], residue(profile, facts))
+                read_stats["values"] += len(profile.values)
+                read_stats["subjects"] += len(profile.subjects)
+                read_stats["references"] += len(profile.references)
+                read_stats["facts"] += len(facts)
+                read_stats["from_context"] += sum(1 for f in facts if f.subject_mode == "context")
+                read_stats["with_residue"] += bool(readings[row["id"]].residue)
                 label = (row.get("label") or "").strip().lower()
                 if label and self.is_practice(row):
                     continue
@@ -200,10 +214,18 @@ class HypePipeline:
                     labelled.append(RowFacts(row, f"input-{n}", read, profile, label))
                 else:
                     new.append(RowFacts(row, f"input-{n}", read, profile, None))
+            if n % 20 == 19:
+                report("reading", {"pages_done": n + 1, "pages": len(pages)})
+        report("read", read_stats)
         kb = build_knowledge(self.known + labelled + new)
+        report("knowledge", {"facts_tracked": len(kb.facts), "observations": sum(len(o) for o in kb.facts.values()),
+                             "practice_rows": len(self.known), "input_rows_labelled": len(labelled)})
         evidence = collect_evidence(kb, new)
         predictions = self.labeller.predict_all(evidence)
-        return [self._verdict(kb, r, ev, p) for r, ev, p in zip(new, evidence, predictions)], readings
+        verdicts = [self._verdict(kb, r, ev, p) for r, ev, p in zip(new, evidence, predictions)]
+        report("labelled", {k: sum(1 for v in verdicts if v.label == k) for k in ("true", "false", "unsure")}
+               | {"by_rule": sum(1 for v in verdicts if v.decided_by.startswith("rule"))})
+        return verdicts, readings
 
     def _verdict(self, kb: KnowledgeBase, r: RowFacts, ev: RowEvidence, prediction) -> Verdict:
         label, confidence, probs = prediction

@@ -156,7 +156,9 @@ class AttributeIndex:
         seen_attrs = set()
         for fact in form:
             subject = self.lexicon.resolve(fact["subject"])
-            key = (subject.name if subject else fact["subject"], fact["attribute"])
+            if subject is None or fact["attribute"] not in subject.attributes:
+                continue  # a lexicon without this fact (the run's own) cannot name it, so it is no candidate
+            key = (subject.name, fact["attribute"])
             value = fact["value"]
             sig = self.signatures[key]
             sig.rows += 1

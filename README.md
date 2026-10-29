@@ -1,3 +1,49 @@
+# Kolmogorov team 56: a Hype Arena system
+
+A system that labels rows about Hooly `true`, `false` or `unsure` with a confidence, and writes exactly 1,000 new true claims. It is not a language model: deterministic reading rules plus three small log-linear models learned from the practice data, in the Python standard library only.
+
+## Run it
+
+| What | Command |
+| --- | --- |
+| The arena run (reads `/universe/`, writes `/output/output.csv`) | `docker build --platform linux/amd64 -t kolmogorov56 .` then `scripts/check.sh kolmogorov56` |
+| The frontend: upload a CSV, watch each step, download the tables | `python -m hype.server`, then open http://localhost:8000 |
+| The arena run here, without Docker | `python -m hype.run --contract universe.csv --out output.csv` |
+| Label a table, written back in the practice shape (`id, text, date, label, form, residue`) | `python -m hype.run my_rows.csv --out results.csv` |
+| Label sentences you write, added to that table | `python -m hype.run --write` or `python -m hype.run --add "2026-04-01 \| Hooly AI Pro costs €59 per month."` |
+| The 1,000 claims alone | `python -m hype.claims --show 5` |
+
+## How it works
+
+A statement is its **form** (the facts it states) plus its **residue** (what it writes besides them: names such as `Berlin` and `Lisbon` in p-48, values no fact takes, the references it leaves to its page).
+
+| Step | Module | What it does |
+| --- | --- | --- |
+| 0. Pages | `resolve.py` | Consecutive rows of one date are one page: the context a sentence leans on. |
+| 1. Characterize | `characterize.py`, `values.py`, `lexicon.py` | Subjects and aliases from the lexicon, values read as `value-forms.md` reads them (comparisons, negations, approximations, ranges), names, references, time words, hedges. |
+| 2. Resolve | `resolve.py` | Each value tied to a (subject, attribute), or to no fact; the subject found in the page when the sentence leaves it out. Three log-linear models, two passes over each page. |
+| 3. Knowledge | `knowledge.py` | Every labelled row is an observation of its facts on its date; each fact gets a step timeline. A claim is checked against what the other rows say before, on and after its date, never against its own row. |
+| 4. Label | `label.py` | A noisy-OR fact model (one false fact makes a row false), a three-label row model with the row's voice and its page, and two rules found in the data. |
+| 5. Claims | `claims.py` | Values from labelled-true rows only, still holding on 29 Oct 2026 for `fact` and `compare`; every text read back with the system's own reader and dropped if the referee could read it otherwise. |
+
+## How well it does
+
+Measured on practice pages the models never saw, as the arena run sees new rows:
+
+| | Result |
+| --- | --- |
+| Values of the gold forms found in the text | 99.9% |
+| Facts resolved exactly (subject, attribute, value), F1 | 0.86 |
+| Row labels right | 87.6% (always `true`: 83.3%) |
+| Calibration (Brier, labelled rows) | 0.097 |
+| Claims overturned when 20% of the pages are held out | 0.0 to 0.6% |
+| Claims valid against `entry.schema.json` and the lexicon | 1,000 of 1,000 |
+| Arena run on 20,000 rows | under 3 minutes here |
+
+Two rules hold without exception in the practice data: a value contradicted by a labelled-true row of the same day is false (17 of 17), and a value other than the one labelled-true rows hold on both sides of its date is false (81 of 81).
+
+---
+
 # Hype Arena starter
 
 ## [hype-arena.vercel.app](https://hype-arena.vercel.app/)

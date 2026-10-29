@@ -235,22 +235,37 @@ def run_write(args) -> int:
     return 0
 
 
-def run_arena() -> int:
-    """The contract's run: every unlabelled row of /universe/universe.csv labelled in /output/output.csv."""
-    rows = read_table(ARENA_INPUT)
+def run_arena(input_path: str = ARENA_INPUT, lexicon_path: str | None = None, output_path: str = ARENA_OUTPUT) -> int:
+    """The contract's run: a label for every unlabelled input row, and exactly 1,000 new true claims.
+
+    The table is written three times, each complete: at once with every row unsure, then with the
+    claims, then with the labels. A run stopped at the deadline still hands in the best table so far.
+    """
+    from .claims import claim_rows, generate_claims
+
+    started = time.time()
+    rows = read_table(input_path)
     unlabelled = [r for r in rows if not r.get("label")]
-    fallback = [{"id": r["id"], "type": "", "text": "", "form": "", "label": "unsure", "confidence": ""} for r in unlabelled]
-    write_table(ARENA_OUTPUT, CONTRACT_COLUMNS, fallback, excel=False)   # a valid table at once
-    lexicon = ARENA_LEXICON if os.path.exists(ARENA_LEXICON) else DEFAULT_LEXICON
+    lexicon = lexicon_path or (ARENA_LEXICON if os.path.exists(ARENA_LEXICON) else DEFAULT_LEXICON)
+
+    def label_rows(verdicts: dict) -> list[dict]:
+        out = []
+        for r in unlabelled:
+            v = verdicts.get(r["id"])
+            label = v.label if v else "unsure"
+            conf = "" if label == "unsure" or v.confidence is None else f"{v.confidence:.4f}"
+            out.append({"id": r["id"], "type": "", "text": "", "form": "", "label": label, "confidence": conf})
+        return out
+
+    write_table(output_path, CONTRACT_COLUMNS, label_rows({}), excel=False)
+    claims, _ = generate_claims(lexicon, rows)
+    taken = {r["id"] for r in rows}
+    claims_out = [c for c in claim_rows(claims) if c["id"] not in taken]
+    write_table(output_path, CONTRACT_COLUMNS, label_rows({}) + claims_out, excel=False)
+    print(f"{len(claims_out)} claims in {time.time() - started:.0f} s", flush=True)
     verdicts = {v.id: v for v in HypePipeline.load(lexicon).label(rows)}
-    out = []
-    for r in unlabelled:
-        v = verdicts.get(r["id"])
-        label = v.label if v else "unsure"
-        conf = "" if label == "unsure" or v.confidence is None else f"{v.confidence:.4f}"
-        out.append({"id": r["id"], "type": "", "text": "", "form": "", "label": label, "confidence": conf})
-    write_table(ARENA_OUTPUT, CONTRACT_COLUMNS, out, excel=False)
-    print(f"labelled {len(out)} rows into {ARENA_OUTPUT}")
+    write_table(output_path, CONTRACT_COLUMNS, label_rows(verdicts) + claims_out, excel=False)
+    print(f"labelled {len(unlabelled)} rows into {output_path} in {time.time() - started:.0f} s")
     return 0
 
 
@@ -281,6 +296,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--table", help="with --write: label this table first into --out, then add the sentences after it")
     parser.add_argument("--date", help="with --add or --write: the date of sentences written without one")
     parser.add_argument("--lexicon", help="the lexicon to read names with (default: data/lexicon.json)")
+    parser.add_argument("--contract", metavar="UNIVERSE_CSV",
+                        help="the arena run on this input, here: labels and 1,000 claims into --out (default output.csv)")
     args = parser.parse_args(argv)
     if args.add:
         return run_add(args)
@@ -288,6 +305,8 @@ def main(argv: list[str]) -> int:
         return run_write(args)
     if args.input:
         return run_table(args)
+    if args.contract:
+        return run_arena(args.contract, args.lexicon, args.out if args.out != "results.csv" else "output.csv")
     if os.path.exists(ARENA_INPUT):
         return run_arena()
     parser.print_help()

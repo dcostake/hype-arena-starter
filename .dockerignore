@@ -1,0 +1,9 @@
+.git
+**/__pycache__
+*.pyc
+results*.csv
+results*.xlsx
+report*.xlsx
+claims.csv
+output.csv
+sample/
