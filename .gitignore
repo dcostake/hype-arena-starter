@@ -9,3 +9,8 @@ report*.xlsx
 claims.csv
 output.csv
 labelled.csv
+
+# test tables and the lock files Excel leaves while a workbook is open
+etichetat.csv
+tabelul_meu.csv
+~$*
