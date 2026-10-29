@@ -1,0 +1,4 @@
+# Shell scripts and the Dockerfile keep LF line endings on every checkout, Windows included:
+# a CRLF in scripts/check.sh stops sh with "$'\r': command not found".
+*.sh text eol=lf
+Dockerfile text eol=lf

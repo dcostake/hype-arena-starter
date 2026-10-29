@@ -1,9 +1,18 @@
+# Only hype/ and data/ go into the image; the rest of the context is left out of the build.
 .git
+.gitattributes
 **/__pycache__
 *.pyc
+*.part
+sample/
+scripts/
+contracts/
+README.md
 results*.csv
-results*.xlsx
-report*.xlsx
+*.xlsx
 claims.csv
 output.csv
-sample/
+labelled.csv
+etichetat.csv
+tabelul_meu.csv
+~$*

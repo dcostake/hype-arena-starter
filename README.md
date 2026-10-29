@@ -20,7 +20,7 @@ It is not a language model. It reads sentences with deterministic rules, and thr
 
 | What | Command |
 | --- | --- |
-| The arena run: reads `/universe/`, writes `/output/output.csv` | `docker build --platform linux/amd64 -t kolmogorov56 .` then `scripts/check.sh kolmogorov56` |
+| The arena run: reads `/universe/`, writes `/output/output.csv` | `scripts/check.sh` (Linux, macOS, WSL) or `powershell -ExecutionPolicy Bypass -File scripts\check.ps1` (Windows, Docker Desktop): each builds the image and runs it as the arena does |
 | The frontend: upload a CSV, watch each step, download the tables | `python -m hype.server`, then open http://localhost:8000 |
 | The arena run on this machine, without Docker | `python -m hype.run --contract universe.csv --out output.csv` |
 | Label a table and get it back in the practice shape: `id, text, date, label, confidence, form, residue` | `python -m hype.run my_rows.csv --out results.csv` |
@@ -80,6 +80,22 @@ Two rules hold without exception in the practice data, and the labeller applies 
 
 What it does not do yet: `unsure` is predicted only for a value the dataset itself marks unsure on the same day, and it does not check relations between two facts such as *twice as long as* or *ten monthly payments*.
 
+## The Docker image
+
+How the `Dockerfile` meets each rule of `contracts/README.md`, "How we run your system":
+
+| Rule | How the image meets it |
+| --- | --- |
+| One image, `docker build --platform linux/amd64 .`, at most 3 GiB | `python:3.14-slim`, multi-architecture, about 150 MB. The system needs only the standard library, so nothing is installed. `.dockerignore` keeps everything but `hype/` and `data/` out of the build. |
+| The build has the network; the run does not | The run uses nothing from the network: the models are in `hype/model/` and the practice data in `data/`. |
+| `USER` is not root; end with `USER 10001` | The last line is `USER 10001`. |
+| A read-only root; only `/tmp` and `/output` writable; no home | `HOME` and `XDG_CACHE_HOME` point at `/tmp`. The code is compiled to bytecode at build time and `PYTHONDONTWRITEBYTECODE=1` stops Python writing any at run time. The system writes only `/output/output.csv`. |
+| 30 minutes, then `SIGTERM` | The run takes minutes, not half an hour (under 3 minutes for 20,000 rows on a laptop). `/output/output.csv` is complete from the first seconds: all rows `unsure`, then with the claims, then with the labels. Each version is written as `output.csv.part` and renamed, so a stop at any moment leaves a whole table. |
+| Input at `/universe/`; scale to a much larger input | `python -m hype.run` with no argument reads `/universe/universe.csv` and `/universe/lexicon.json`. Rows the run cannot read, such as a row with no date, are labelled `unsure` instead of stopping the run. |
+| A broken image fails late | The build runs the system on the practice data and checks that it writes exactly 1,000 claims, so a broken image fails at build time, not in the arena. |
+
+`scripts/check.ps1` runs the same check as `scripts/check.sh` from PowerShell. It is there because on Windows `python3` is often the Microsoft Store alias, and a CRLF checkout breaks `sh`. `.gitattributes` keeps `*.sh` and the `Dockerfile` in LF on every checkout.
+
 ## The files
 
 | Path | What it is |
@@ -98,6 +114,8 @@ What it does not do yet: `unsure` is predicted only for a value the dataset itse
 | `hype/report.py` | An Excel report of the system's labels against the practice labels. |
 | `hype/model/resolver.json`, `hype/model/labeller.json` | The learned weights. |
 | `scripts/validate_claims.py` | Checks the claims of a table against the schema and the lexicon. |
+| `scripts/check.ps1` | `scripts/check.sh` for Windows and Docker Desktop: builds the image and runs it as the arena does. |
+| `.dockerignore`, `.gitattributes`, `.gitignore` | What stays out of the image; LF line endings for shell scripts; the tables written while testing. |
 
 ## Every function, module by module
 
